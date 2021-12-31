@@ -25,3 +25,11 @@ This's my resolver.
 ## Disadvance?
 
 - At you know. If you using callback maybe memory leak if you not control bester.
+
+## Installtion
+
+Now it's time you can install lib and experience
+
+```bash
+go get github.com/teng231/executor
+```
