@@ -25,6 +25,7 @@ This's my resolver.
 ## Disadvance?
 
 - At you know. If you using callback maybe memory leak if you not control bester.
+- If buffer chanel full you need wait a little bits for executed job.
 
 ## Installtion
 
