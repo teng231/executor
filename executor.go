@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 )
 
 type Priority int
@@ -28,7 +32,6 @@ type Engine struct {
 	immediateHub  chan *Job
 	commonHub     chan *Job
 	numberWorkers int
-	capacity      int
 }
 
 type IExecutor interface {
@@ -37,19 +40,54 @@ type IExecutor interface {
 	Rescale(context.Context, int) error
 }
 
-func CreateEngine(numberWorker, capacity int) *Engine {
-	if capacity == 0 {
-		capacity = default_capacity_hub
+type EngineConfig struct {
+	NumberWorker         int
+	Capacity             int
+	BeforeTerminatedFunc func(*sync.WaitGroup, chan *Job, chan *Job)
+}
+
+func CreateEngine(config *EngineConfig) *Engine {
+	if config.Capacity == 0 {
+		config.Capacity = default_capacity_hub
 	}
-	if numberWorker == 0 {
-		numberWorker = default_numberworker
+	if config.NumberWorker == 0 {
+		config.NumberWorker = default_numberworker
 	}
-	return &Engine{
-		immediateHub:  make(chan *Job, capacity),
-		commonHub:     make(chan *Job, capacity),
-		numberWorkers: numberWorker,
-		capacity:      capacity,
+	signChan := make(chan os.Signal, 1)
+	signal.Notify(signChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	engine := &Engine{
+		immediateHub:  make(chan *Job, config.Capacity),
+		commonHub:     make(chan *Job, config.Capacity),
+		numberWorkers: config.NumberWorker,
 	}
+	// listen even when terminate app
+	go func(signChan chan os.Signal) {
+		<-signChan
+		close(engine.immediateHub)
+		close(engine.commonHub)
+		wg := &sync.WaitGroup{}
+		wg.Add(2)
+		if config.BeforeTerminatedFunc != nil {
+			config.BeforeTerminatedFunc(wg, engine.immediateHub, engine.commonHub)
+			wg.Wait()
+			return
+		}
+		// default process
+		go func() {
+			for job := range engine.immediateHub {
+				job.Exectutor(job.Params...)
+			}
+			wg.Done()
+		}()
+		go func() {
+			for job := range engine.commonHub {
+				job.Exectutor(job.Params...)
+			}
+			wg.Done()
+		}()
+		wg.Wait()
+	}(signChan)
+	return engine
 }
 func (e *Engine) Rescale(ctx context.Context, numberWorker int) error {
 	if numberWorker == 0 {

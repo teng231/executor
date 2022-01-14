@@ -52,11 +52,11 @@ func Test_executor(t *testing.T) {
 
 func Test_executorRescale(t *testing.T) {
 	var engine IExecutor
-	engine = CreateEngine(1, 5000)
+	engine = CreateEngine(&EngineConfig{NumberWorker: 1, Capacity: 1000})
 	ctx, cancelFn := context.WithCancel(context.Background())
 	engine.Run(ctx)
 	log.Print("job start send")
-	for i := 0; i < 5000; i++ {
+	for i := 0; i < 1000; i++ {
 		engine.Send(&Job{
 			Params:    []interface{}{"param1", i},
 			Exectutor: testExecFn2,
