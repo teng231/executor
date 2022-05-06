@@ -31,10 +31,11 @@ type Engine struct {
 }
 
 type IExecutor interface {
-	Run(context.Context)
+	Run(context.Context, func([]*Job) error)
 	Send(*Job) error
 	Rescale(context.Context, int) error
 	Len() int
+	GetHubs() []*Job
 	Wait()
 	Done()
 }
@@ -69,7 +70,7 @@ func (e *Engine) Rescale(ctx context.Context, numberWorker int) error {
 		numberWorker = default_numberworker
 	}
 	e.numberWorkers = numberWorker
-	e.Run(ctx)
+	e.Run(ctx, nil)
 	return nil
 }
 
