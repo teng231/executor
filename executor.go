@@ -10,11 +10,7 @@ import (
 	"syscall"
 )
 
-type Priority int
-
 const (
-	Priority_immediate   = 1
-	Priority_common      = 2
 	default_capacity_hub = 2000
 	default_numberworker = 3
 	E_invalid_priority   = "invalid priority"
@@ -25,25 +21,28 @@ type Job struct {
 	Params    []interface{}
 	Exectutor func(...interface{}) (interface{}, error)
 	CallBack  func(interface{}, error)
-	Priority  Priority
 }
 
 type Engine struct {
-	immediateHub  chan *Job
-	commonHub     chan *Job
+	hub           chan *Job
 	numberWorkers int
+	wg            *sync.WaitGroup
+	ctx           context.Context
 }
 
 type IExecutor interface {
 	Run(context.Context)
 	Send(*Job) error
 	Rescale(context.Context, int) error
+	Len() int
+	Wait()
+	Done()
 }
 
 type EngineConfig struct {
-	NumberWorker         int
-	Capacity             int
-	BeforeTerminatedFunc func(*sync.WaitGroup, chan *Job, chan *Job)
+	NumberWorker int
+	Capacity     int
+	WaitGroup    *sync.WaitGroup
 }
 
 func CreateEngine(config *EngineConfig) *Engine {
@@ -53,42 +52,18 @@ func CreateEngine(config *EngineConfig) *Engine {
 	if config.NumberWorker == 0 {
 		config.NumberWorker = default_numberworker
 	}
-	signChan := make(chan os.Signal, 1)
-	signal.Notify(signChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	engine := &Engine{
-		immediateHub:  make(chan *Job, config.Capacity),
-		commonHub:     make(chan *Job, config.Capacity),
-		numberWorkers: config.NumberWorker,
+	if config.WaitGroup == nil {
+		config.WaitGroup = &sync.WaitGroup{}
 	}
-	// listen even when terminate app
-	go func(signChan chan os.Signal) {
-		<-signChan
-		close(engine.immediateHub)
-		close(engine.commonHub)
-		wg := &sync.WaitGroup{}
-		wg.Add(2)
-		if config.BeforeTerminatedFunc != nil {
-			config.BeforeTerminatedFunc(wg, engine.immediateHub, engine.commonHub)
-			wg.Wait()
-			return
-		}
-		// default process
-		go func() {
-			for job := range engine.immediateHub {
-				job.Exectutor(job.Params...)
-			}
-			wg.Done()
-		}()
-		go func() {
-			for job := range engine.commonHub {
-				job.Exectutor(job.Params...)
-			}
-			wg.Done()
-		}()
-		wg.Wait()
-	}(signChan)
+	config.WaitGroup.Add(1)
+	engine := &Engine{
+		hub:           make(chan *Job, config.Capacity),
+		numberWorkers: config.NumberWorker,
+		wg:            config.WaitGroup,
+	}
 	return engine
 }
+
 func (e *Engine) Rescale(ctx context.Context, numberWorker int) error {
 	if numberWorker == 0 {
 		numberWorker = default_numberworker
@@ -98,48 +73,69 @@ func (e *Engine) Rescale(ctx context.Context, numberWorker int) error {
 	return nil
 }
 
+func (e *Engine) Len() int {
+	return len(e.hub)
+}
+
+func (e *Engine) Wait() {
+	e.wg.Wait()
+}
+
+func (e *Engine) Done() {
+	close(e.hub)
+	e.wg.Done()
+}
+
 func (e *Engine) Send(j *Job) error {
-	if j.Priority == 0 || (j.Priority != Priority_common && j.Priority != Priority_immediate) {
-		return errors.New(E_invalid_priority)
-	}
 	if j.Exectutor == nil {
 		return errors.New(E_exector_required)
 	}
-	if j.Priority == Priority_immediate {
-		e.immediateHub <- j
-	}
-	if j.Priority == Priority_common {
-		e.commonHub <- j
-	}
+	e.hub <- j
 	return nil
 }
-
-func (e *Engine) Run(ctx context.Context) {
-	for i := 0; i < e.numberWorkers; i++ {
-		go func() {
-			for {
-				select {
-				case job := <-e.immediateHub:
-					result, err := job.Exectutor(job.Params...)
-					if job.CallBack != nil {
-						job.CallBack(result, err)
-					}
-				case <-ctx.Done():
-					log.Print("done")
-					return
-				}
-			}
-		}()
+func (e *Engine) GetHubs() []*Job {
+	hubs := make([]*Job, 0, 10)
+	for item := range e.hub {
+		hubs = append(hubs, item)
 	}
+	return hubs
+}
+
+func (e *Engine) Run(ctx context.Context, terminateHandle func([]*Job) error) {
+	signChan := make(chan os.Signal, 1)
+	signal.Notify(signChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	e.ctx = ctx
 	for i := 0; i < e.numberWorkers; i++ {
 		go func() {
 			for {
 				select {
-				case job := <-e.commonHub:
+				case job := <-e.hub:
+					e.wg.Add(1)
 					result, err := job.Exectutor(job.Params...)
 					if job.CallBack != nil {
 						job.CallBack(result, err)
 					}
+					e.wg.Done()
+				case <-signChan:
+					log.Print("terminating processing ", e.hub)
+					close(e.hub)
+					if len(e.hub) == 0 {
+						return
+					}
+
+					if terminateHandle != nil {
+						terminateHandle(e.GetHubs())
+						return
+					}
+
+					for job := range e.hub {
+						e.wg.Add(1)
+						go job.Exectutor(job.Params...)
+						job.CallBack = func(i interface{}, _ error) {
+							e.wg.Done()
+						}
+					}
+					log.Print("terminated")
 				case <-ctx.Done():
 					log.Print("done")
 					return
