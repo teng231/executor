@@ -34,3 +34,90 @@ Now it's time you can install lib and experience
 ```bash
 go get github.com/teng231/executor
 ```
+
+## Usage : Interface list
+```go
+type ISafeQueue interface {
+	Info() SafeQueueInfo // engine info
+	Close() error // close all anything
+	RescaleUp(numWorker uint) // increase worker
+	RescaleDown(numWorker uint) error // reduce worker
+	Run() // start
+	Send(jobs ...*Job) error // push job to hub
+	Wait() // keep block thread
+	Done() // Immediate stop wait
+}
+```
+
+### Initial
+```go
+	engine = CreateSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 3,
+        Capacity: 500,
+		WaitGroup: &sync.WaitGroup{},
+	})
+    defer engine.Close() // flush engine
+
+    // go engine.Wait() // folk to other thread
+    engine.Wait() // block current thread
+```
+### Send Simple Job
+```go
+    // simple job
+    j := &Job{
+        Exectutor: func(in ...interface{}) {
+            // any thing
+        },
+        Params: []interface{1, "abc"}
+    }
+    engine.Send(j)
+    // send mutiple job
+    jobs := []*Job{
+        {
+             Exectutor: func(in ...interface{}) {
+            // any thing
+        },
+        Params: []interface{1, "abc"}
+        },
+         Exectutor: func(in ...interface{}) {
+            // any thing
+        },
+        Params: []interface{2, "abc"}
+    }
+    engine.Send(jobs...)
+```
+
+### Send Job complicated
+```go
+    // wait for job completed
+    j := &Job{
+        Exectutor: func(in ...interface{}) {
+            // any thing
+        },
+        Params: []interface{1, "abc"},
+        Wg: &sync.WaitGroup{},
+    }
+    engine.Send(j)
+    // wait for job run success
+    j.Wait()
+
+    // callback handle async
+    // you can sync when use with waitgroup
+    j := &Job{
+        Exectutor: func(in ...interface{}) {
+            // any thing
+        },
+        CallBack: func(out interface{}, err error) {
+            // try some thing here
+        }
+        Params: []interface{1, "abc"}
+    }
+    engine.Send(j)
+```
+
+### safequeue scale up/down
+
+```go
+    engine.ScaleUp(5)
+    engine.ScaleDown(2)
+```
