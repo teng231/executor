@@ -9,7 +9,7 @@ import (
 
 func testExec(in ...interface{}) (interface{}, error) {
 	log.Print("job ")
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	return nil, nil
 }
 func TestSimpleSafeQueue(t *testing.T) {
@@ -43,11 +43,11 @@ func TestSimpleSafeQueue(t *testing.T) {
 	}
 	engine.Send(job)
 	job.Wait()
-	// for i := 0; i < 100; i++ {
-	// 	engine.Send(&Job{
-	// 		Exectutor: testExec,
-	// 	})
-	// }
+	for i := 0; i < 100; i++ {
+		engine.Send(&Job{
+			Exectutor: testExec,
+		})
+	}
 	log.Print("------------------- test scale up size -------------------")
 	log.Print(engine.Info())
 
@@ -63,5 +63,23 @@ func TestSimpleSafeQueue(t *testing.T) {
 	time.AfterFunc(5*time.Second, func() {
 		log.Print("xxxxxxx: ", engine.Info())
 	})
+	engine.Wait()
+}
+
+func TestSimpleSafeQueueGroup(t *testing.T) {
+	var engine ISafeQueue
+	engine = CreateSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 3, Capacity: 500,
+		WaitGroup: &sync.WaitGroup{},
+	})
+	defer engine.Close()
+	engine.Run()
+	group1 := make([]*Job, 0)
+	now := time.Now()
+	for i := 0; i < 10; i++ {
+		group1 = append(group1, &Job{Exectutor: testExec})
+	}
+	engine.SendWithGroup(group1...)
+	log.Print("------------- done -------------- ", time.Since(now))
 	engine.Wait()
 }

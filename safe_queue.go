@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 	"sync"
-	"time"
 )
 
 type FnWithTerminating = func() []*Job
@@ -43,14 +42,15 @@ type SafeQueueInfo struct {
 	LenLocks      int
 }
 type ISafeQueue interface {
-	Info() SafeQueueInfo
-	Close() error
-	RescaleUp(numWorker uint)
-	RescaleDown(numWorker uint) error
-	Run()
-	Send(jobs ...*Job) error
-	Wait()
-	Done()
+	Info() SafeQueueInfo              // engine info
+	Close() error                     // close all anything
+	RescaleUp(numWorker uint)         // increase worker
+	RescaleDown(numWorker uint) error // reduce worker
+	Run()                             // start
+	Send(jobs ...*Job) error          // push job to hub
+	SendWithGroup(jobs ...*Job) error // push job to hub and wait to done
+	Wait()                            // keep block thread
+	Done()                            // Immediate stop wait
 }
 type SafeQueue struct {
 	hub                chan *Job
@@ -114,6 +114,20 @@ func (s *SafeQueue) Send(jobs ...*Job) error {
 	return nil
 }
 
+func (s *SafeQueue) SendWithGroup(jobs ...*Job) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(len(jobs))
+	for _, j := range jobs {
+		j.Wg = wg
+		s.hub <- j
+	}
+	wg.Wait()
+	return nil
+}
+
 // RescaleUp numberWorker limit at 10
 func (s *SafeQueue) RescaleUp(numWorker uint) {
 	if numWorker > 10 {
@@ -164,7 +178,6 @@ func (s *SafeQueue) workerStart(worker int) {
 					if job.CallBack != nil {
 						job.CallBack(result, err)
 					}
-					time.Sleep(3 * time.Second)
 					job.Done()
 				case <-ch:
 					log.Print("end of worker id ", key)

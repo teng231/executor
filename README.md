@@ -115,6 +115,26 @@ type ISafeQueue interface {
     engine.Send(j)
 ```
 
+
+### Send Job with groups
+```go
+    // prepaire a group job.
+	group1 := make([]*Job, 0)
+	for i := 0; i < 10; i++ {
+		group1 = append(group1, &Job{
+            Exectutor: func(in ...interface{}) {
+                // any thing
+            },
+            Params: []interface{1, "abc"},
+            Wg: &sync.WaitGroup{},
+        })
+	}
+    // wait for job completed
+	engine.SendWithGroup(group1...)
+
+    engine.Wait()
+```
+
 ### safequeue scale up/down
 
 ```go
