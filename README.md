@@ -51,11 +51,11 @@ type ISafeQueue interface {
 
 ### Initial
 ```go
-	engine = CreateSafeQueue(&SafeQueueConfig{
-		NumberWorkers: 3,
+    engine = CreateSafeQueue(&SafeQueueConfig{
+        NumberWorkers: 3,
         Capacity: 500,
-		WaitGroup: &sync.WaitGroup{},
-	})
+        WaitGroup: &sync.WaitGroup{},
+    })
     defer engine.Close() // flush engine
 
     // go engine.Wait() // folk to other thread

@@ -69,7 +69,7 @@ func TestSimpleSafeQueue(t *testing.T) {
 func TestSimpleSafeQueueGroup(t *testing.T) {
 	var engine ISafeQueue
 	engine = CreateSafeQueue(&SafeQueueConfig{
-		NumberWorkers: 3, Capacity: 500,
+		NumberWorkers: 1, Capacity: 500,
 		WaitGroup: &sync.WaitGroup{},
 	})
 	defer engine.Close()
