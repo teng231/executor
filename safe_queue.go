@@ -82,6 +82,26 @@ func CreateSafeQueue(config *SafeQueueConfig) *SafeQueue {
 	return engine
 }
 
+func RunSafeQueue(config *SafeQueueConfig) *SafeQueue {
+	if config.Capacity == 0 {
+		config.Capacity = default_capacity_hub
+	}
+	if config.NumberWorkers == 0 {
+		config.NumberWorkers = default_numberworker
+	}
+	if config.WaitGroup == nil {
+		config.WaitGroup = &sync.WaitGroup{}
+	}
+	engine := &SafeQueue{
+		hub:           make(chan *Job, config.Capacity),
+		numberWorkers: config.NumberWorkers,
+		closech:       make(map[string]chan bool),
+		wg:            &sync.WaitGroup{},
+	}
+	engine.Run()
+	return engine
+}
+
 func (s *SafeQueue) Info() SafeQueueInfo {
 	return SafeQueueInfo{
 		LenJobs:       len(s.hub),
