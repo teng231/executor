@@ -13,7 +13,10 @@ type Job struct {
 	Exectutor func(...interface{}) (interface{}, error)
 	CallBack  func(interface{}, error)
 	Wg        *sync.WaitGroup
+	Id        interface{}
 }
+
+var CallBacks func([]interface{}, error)
 
 func (j *Job) Wait() {
 	if j.Wg == nil {
@@ -87,11 +90,17 @@ func (s *SafeQueue) Info() SafeQueueInfo {
 	}
 }
 func (s *SafeQueue) Wait() {
+	if s.wg == nil {
+		return
+	}
 	s.wg.Add(1)
 	s.wg.Wait()
 }
 
 func (s *SafeQueue) Done() {
+	if s.wg == nil {
+		return
+	}
 	s.wg.Done()
 }
 
@@ -167,23 +176,26 @@ func (s *SafeQueue) Jobs() []*Job {
 }
 
 func (s *SafeQueue) workerStart(worker int) {
+	handleFn := func(ch chan bool, key string) {
+		for {
+			select {
+			case job := <-s.hub:
+				result, err := job.Exectutor(job.Params...)
+				if job.CallBack != nil {
+					job.CallBack(result, err)
+				}
+				if job.Wg != nil {
+					job.Done()
+				}
+			case <-ch:
+				log.Print("end of worker id ", key)
+				return
+			}
+		}
+	}
 	for i := 0; i < worker; i++ {
 		key := RandStringRunes(10)
 		s.closech[key] = make(chan bool)
-		go func(ch chan bool, key string) {
-			for {
-				select {
-				case job := <-s.hub:
-					result, err := job.Exectutor(job.Params...)
-					if job.CallBack != nil {
-						job.CallBack(result, err)
-					}
-					job.Done()
-				case <-ch:
-					log.Print("end of worker id ", key)
-					return
-				}
-			}
-		}(s.closech[key], key)
+		go handleFn(s.closech[key], key)
 	}
 }
