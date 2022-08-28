@@ -9,7 +9,7 @@ import (
 
 func testExec(in ...interface{}) (interface{}, error) {
 	log.Print("job ", in)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(3 * time.Second)
 	return nil, nil
 }
 func TestSimpleSafeQueue(t *testing.T) {
@@ -114,5 +114,23 @@ func TestNotUsingWaitgroup(t *testing.T) {
 	engine.SendWithGroup(group2...)
 	log.Print("------------- done -------------- ", time.Since(now))
 	// engine.Wait()
+	<-wait
+}
+
+func TestOverload(t *testing.T) {
+	var engine ISafeQueue
+	engine = CreateSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 2, Capacity: 30,
+	})
+	wait := make(chan bool)
+	defer engine.Close()
+	engine.Run()
+	now := time.Now()
+	for i := 0; i < 30; i++ {
+		engine.Send(&Job{Exectutor: testExec, Params: []interface{}{"xxx", i}})
+	}
+	log.Print("------------- done -------------- ", time.Since(now))
+	engine.Send(&Job{Exectutor: testExec, Params: []interface{}{"over power"}})
+	log.Print("------------- done2 -------------- ", time.Since(now))
 	<-wait
 }
