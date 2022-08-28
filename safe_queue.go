@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"time"
 )
 
 type FnWithTerminating = func() []*Job
@@ -37,6 +38,7 @@ type SafeQueueConfig struct {
 	NumberWorkers int
 	Capacity      int
 	WaitGroup     *sync.WaitGroup
+	Debug         bool // enable with show log and show info after 5 min
 }
 
 type SafeQueueInfo struct {
@@ -78,6 +80,16 @@ func CreateSafeQueue(config *SafeQueueConfig) *SafeQueue {
 		numberWorkers: config.NumberWorkers,
 		closech:       make(map[string]chan bool),
 		wg:            &sync.WaitGroup{},
+	}
+	if config.Debug {
+		tick := time.NewTicker(5 * time.Minute)
+		go func() {
+			for {
+				<-tick.C
+				info := engine.Info()
+				log.Print("[SAFE_QUEUE_DEBUG]: ", info)
+			}
+		}()
 	}
 	return engine
 }
@@ -201,6 +213,7 @@ func (s *SafeQueue) workerStart(worker int) {
 			select {
 			case job := <-s.hub:
 				result, err := job.Exectutor(job.Params...)
+
 				if job.CallBack != nil {
 					job.CallBack(result, err)
 				}
