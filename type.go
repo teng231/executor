@@ -11,7 +11,7 @@ const (
 	E_exector_required   = "exector required"
 )
 
-var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*_=-+?|")
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*_=-+?|1234567890")
 
 func RandStringRunes(n int) string {
 	b := make([]rune, n)
