@@ -51,15 +51,18 @@ type ISafeQueue interface {
 
 ### Initial
 ```go
-    engine = CreateSafeQueue(&SafeQueueConfig{
+    engine := CreateSafeQueue(&SafeQueueConfig{
         NumberWorkers: 3,
         Capacity: 500,
-        WaitGroup: &sync.WaitGroup{},
     })
-    defer engine.Close() // flush engine
+    engine.Run()
 
-    // go engine.Wait() // folk to other thread
-    engine.Wait() // block current thread
+    // or with out func Run()
+
+    engine := RunSafeQueue(&SafeQueueConfig{
+        NumberWorkers: 3,
+        Capacity: 500,
+    })
 ```
 ### Send Simple Job
 ```go
@@ -74,7 +77,7 @@ type ISafeQueue interface {
     // send mutiple job
     jobs := []*Job{
         {
-             Exectutor: func(in ...interface{}) {
+        Exectutor: func(in ...interface{}) {
             // any thing
         },
         Params: []interface{1, "abc"}
