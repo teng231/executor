@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"errors"
 	"log"
 	"sync"
 	"testing"
@@ -9,7 +10,15 @@ import (
 
 func testExec(in ...interface{}) (interface{}, error) {
 	log.Print("job ", in)
-	time.Sleep(3 * time.Second)
+	t := in[0].(int)
+	text := ""
+	if in[1] != nil {
+		text = in[1].(string)
+	}
+	time.Sleep(time.Duration(t) * time.Second)
+	if text == "fail" {
+		return nil, errors.New("fail")
+	}
 	return nil, nil
 }
 func TestSimpleSafeQueue(t *testing.T) {
@@ -23,12 +32,14 @@ func TestSimpleSafeQueue(t *testing.T) {
 	testcases := make([]*Job, 0)
 	testcases = append(testcases,
 		&Job{
+			Params:    []interface{}{1, "xxx"},
 			Exectutor: testExec,
 		},
 		&Job{
+			Params:    []interface{}{1, "xxx"},
 			Exectutor: testExec,
 		},
-		&Job{
+		&Job{Params: []interface{}{1, "xxx"},
 			Exectutor: testExec,
 			// Wg:        &sync.WaitGroup{},
 		},
@@ -39,13 +50,14 @@ func TestSimpleSafeQueue(t *testing.T) {
 	jwg := &sync.WaitGroup{}
 	job := &Job{
 		Exectutor: testExec,
-		Params:    []interface{}{"test 1"},
+		Params:    []interface{}{1, "test 1"},
 		Wg:        jwg,
 	}
 	engine.Send(job)
 	job.Wait()
 	for i := 0; i < 100; i++ {
 		engine.Send(&Job{
+			Params:    []interface{}{1, "xx"},
 			Exectutor: testExec,
 		})
 	}
@@ -70,20 +82,20 @@ func TestSimpleSafeQueue(t *testing.T) {
 func TestSimpleSafeQueueGroup(t *testing.T) {
 	var engine ISafeQueue
 	engine = CreateSafeQueue(&SafeQueueConfig{
-		NumberWorkers: 2, Capacity: 500,
+		NumberWorkers: 8, Capacity: 500,
 		WaitGroup: &sync.WaitGroup{},
 	})
-	defer engine.Close()
+	// defer engine.Close()
 	engine.Run()
 	group1 := make([]*Job, 0)
 	group2 := make([]*Job, 0)
 	now := time.Now()
-	for i := 0; i < 10; i++ {
-		group1 = append(group1, &Job{Exectutor: testExec, Params: []interface{}{"xxx", i}})
+	for i := 0; i < 5; i++ {
+		group1 = append(group1, &Job{Exectutor: testExec, Params: []interface{}{i, "xxx", i}})
 	}
 
-	for i := 0; i < 20; i++ {
-		group2 = append(group2, &Job{Exectutor: testExec, Params: []interface{}{"yyy", i}})
+	for i := 0; i < 4; i++ {
+		group2 = append(group2, &Job{Exectutor: testExec, Params: []interface{}{i, "yyy", i}})
 	}
 	engine.SendWithGroup(group1...)
 	engine.SendWithGroup(group2...)
@@ -104,11 +116,11 @@ func TestNotUsingWaitgroup(t *testing.T) {
 	group2 := make([]*Job, 0)
 	now := time.Now()
 	for i := 0; i < 10; i++ {
-		group1 = append(group1, &Job{Exectutor: testExec, Params: []interface{}{"xxx", i}})
+		group1 = append(group1, &Job{Exectutor: testExec, Params: []interface{}{i, "xxx", i}})
 	}
 
 	for i := 0; i < 20; i++ {
-		group2 = append(group2, &Job{Exectutor: testExec, Params: []interface{}{"yyy", i}})
+		group2 = append(group2, &Job{Exectutor: testExec, Params: []interface{}{i, "yyy", i}})
 	}
 	engine.SendWithGroup(group1...)
 	engine.SendWithGroup(group2...)
@@ -127,10 +139,65 @@ func TestOverload(t *testing.T) {
 	engine.Run()
 	now := time.Now()
 	for i := 0; i < 30; i++ {
-		engine.Send(&Job{Exectutor: testExec, Params: []interface{}{"xxx", i}})
+		engine.Send(&Job{Exectutor: testExec, Params: []interface{}{i, "xxx", i}})
 	}
 	log.Print("------------- done -------------- ", time.Since(now))
 	engine.Send(&Job{Exectutor: testExec, Params: []interface{}{"over power"}})
 	log.Print("------------- done2 -------------- ", time.Since(now))
+	<-wait
+}
+func TestGroup(t *testing.T) {
+	var engine ISafeQueue
+	engine = CreateSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 3, Capacity: 30,
+	})
+	wait := make(chan bool)
+	// defer engine.Close()
+	engine.Run()
+	now := time.Now()
+	for i := 0; i < 10; i++ {
+		if i == 3 {
+			engine.SendWithGroup(&Job{Exectutor: testExec, Params: []interface{}{i, "fail"},
+				CallBack: func(i interface{}, err error) {
+					log.Print(i, err)
+				}})
+			continue
+		}
+		engine.SendWithGroup(&Job{Exectutor: testExec, Params: []interface{}{i, "xxxx"},
+			CallBack: func(i interface{}, err error) {
+				log.Print(i, err)
+			}})
+	}
+	log.Print("------------- done2 -------------- ", time.Since(now))
+	<-wait
+}
+
+func TestGroupWithCancel(t *testing.T) {
+	var engine ISafeQueue
+	engine = CreateSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 3, Capacity: 30,
+	})
+	wait := make(chan bool)
+	// defer engine.Close()
+	engine.Run()
+	now := time.Now()
+	groupId := engine.MakeGroupIdAndStartQueue()
+	for i := 0; i < 10; i++ {
+		if i == 3 {
+			engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "fail"},
+				IsCancelWhenSomethingError: true,
+				CallBack: func(i interface{}, err error) {
+					log.Print(i, err)
+				}})
+			continue
+		}
+		engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "xxxx"},
+			IsCancelWhenSomethingError: true,
+			CallBack: func(i interface{}, err error) {
+				log.Print(i, err)
+			}})
+	}
+	log.Print("------------- done2 -------------- ", time.Since(now))
+	engine.ReleaseGroupId(groupId)
 	<-wait
 }
