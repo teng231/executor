@@ -171,3 +171,28 @@ type ISafeQueue interface {
     engine.Wait()
     engine.ReleaseGroupId(groupId)
 ```
+
+## Race
+
+For run a task and limit time process
+
+```go
+_, err := Race(200*time.Millisecond, func(i ...interface{}) (interface{}, error) {
+    time.Sleep(time.Duration(i[0].(int)) * time.Millisecond)
+    return nil, nil
+}, 30)
+log.Print("run: ", time.Since(now))
+```
+
+With SafeQueue
+
+```go
+engine := RunSafeQueue(&SafeQueueConfig{
+    NumberWorkers: 3, Capacity: 500,
+    WaitGroup: &sync.WaitGroup{},
+})
+_, err = RaceWithSafeQueue(engine, 200*time.Millisecond, func(i ...interface{}) (interface{}, error) {
+    time.Sleep(time.Duration(i[0].(int)) * time.Millisecond)
+    return nil, nil
+}, 500)
+```
