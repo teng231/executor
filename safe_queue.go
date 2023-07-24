@@ -18,12 +18,11 @@ const (
 type FnWithTerminating = func() []*Job
 
 type Job struct {
-	Params                     []interface{}
-	Exectutor                  func(...interface{}) (interface{}, error)
-	CallBack                   func(interface{}, error)
-	Wg                         *sync.WaitGroup
-	GroupId                    string
-	IsCancelWhenSomethingError bool
+	Params    []interface{}
+	Exectutor func(...interface{}) (interface{}, error)
+	CallBack  func(interface{}, error)
+	Wg        *sync.WaitGroup
+	Limiter   *Limiter
 }
 
 var CallBacks func([]interface{}, error)
@@ -63,33 +62,21 @@ type ISafeQueue interface {
 	Run()                             // start
 	Send(jobs ...*Job) error          // push job to hub
 	SendWithGroup(jobs ...*Job) error // push job to hub and wait to done
-	MakeGroupIdAndStartQueue() string
-	ReleaseGroupId(groupId string)
-	Wait() // keep block thread
-	Done() // Immediate stop wait
+	Wait()                            // keep block thread
+	Done()                            // Immediate stop wait
 }
+
+func (sq *SafeQueue) terminatingHandler() []*Job {
+	close(sq.hub)
+	return sq.Jobs()
+}
+
 type SafeQueue struct {
 	hub                chan *Job
 	numberWorkers      int
 	closech            map[string](chan bool)
 	wg                 *sync.WaitGroup
 	TerminatingHandler FnWithTerminating
-	mGroupIdStatus     map[string]int
-	mtlock             *sync.RWMutex
-}
-
-func (s *SafeQueue) MakeGroupIdAndStartQueue() string {
-	groupId := RandStringRunes(12)
-	s.mtlock.Lock()
-	s.mGroupIdStatus[groupId] = ON_WORKING
-	s.mtlock.Unlock()
-	return groupId
-}
-
-func (s *SafeQueue) ReleaseGroupId(groupId string) {
-	s.mtlock.Lock()
-	delete(s.mGroupIdStatus, groupId)
-	s.mtlock.Unlock()
 }
 
 func CreateSafeQueue(config *SafeQueueConfig) *SafeQueue {
@@ -103,12 +90,10 @@ func CreateSafeQueue(config *SafeQueueConfig) *SafeQueue {
 		config.WaitGroup = &sync.WaitGroup{}
 	}
 	engine := &SafeQueue{
-		hub:            make(chan *Job, config.Capacity),
-		numberWorkers:  config.NumberWorkers,
-		closech:        make(map[string]chan bool),
-		wg:             &sync.WaitGroup{},
-		mGroupIdStatus: make(map[string]int),
-		mtlock:         &sync.RWMutex{},
+		hub:           make(chan *Job, config.Capacity),
+		numberWorkers: config.NumberWorkers,
+		closech:       make(map[string]chan bool),
+		wg:            &sync.WaitGroup{},
 	}
 	if config.Debug {
 		tick := time.NewTicker(5 * time.Minute)
@@ -133,14 +118,14 @@ func RunSafeQueue(config *SafeQueueConfig) *SafeQueue {
 	if config.WaitGroup == nil {
 		config.WaitGroup = &sync.WaitGroup{}
 	}
+
 	engine := &SafeQueue{
-		hub:            make(chan *Job, config.Capacity),
-		numberWorkers:  config.NumberWorkers,
-		closech:        make(map[string]chan bool),
-		wg:             &sync.WaitGroup{},
-		mGroupIdStatus: make(map[string]int),
-		mtlock:         &sync.RWMutex{},
+		hub:           make(chan *Job, config.Capacity),
+		numberWorkers: config.NumberWorkers,
+		closech:       make(map[string]chan bool),
+		wg:            &sync.WaitGroup{},
 	}
+	engine.TerminatingHandler = engine.terminatingHandler
 	engine.Run()
 	return engine
 }
@@ -243,23 +228,12 @@ func (s *SafeQueue) workerStart(worker int) {
 		for {
 			select {
 			case job := <-s.hub:
-
-				s.mtlock.RLock()
-				status := s.mGroupIdStatus[job.GroupId]
-				s.mtlock.RUnlock()
-
-				if status == ON_FAILURE && job.IsCancelWhenSomethingError {
-					if job.CallBack != nil {
-						job.CallBack(nil, errors.New(CANCELLED))
-					}
-					job.Done()
-					continue
-				}
-				result, err := job.Exectutor(job.Params...)
-				if err != nil {
-					s.mtlock.Lock()
-					s.mGroupIdStatus[job.GroupId] = ON_FAILURE
-					s.mtlock.Unlock()
+				var result interface{}
+				var err error
+				if job.Limiter != nil {
+					result, err = job.Limiter.Allow(job.Exectutor, job.Params...)
+				} else {
+					result, err = job.Exectutor(job.Params...)
 				}
 				if job.CallBack != nil {
 					job.CallBack(result, err)

@@ -172,32 +172,121 @@ func TestGroup(t *testing.T) {
 	<-wait
 }
 
-func TestGroupWithCancel(t *testing.T) {
+// func TestGroupWithCancel(t *testing.T) {
+// 	var engine ISafeQueue
+// 	engine = CreateSafeQueue(&SafeQueueConfig{
+// 		NumberWorkers: 3, Capacity: 30,
+// 	})
+// 	wait := make(chan bool)
+// 	// defer engine.Close()
+// 	engine.Run()
+// 	now := time.Now()
+// 	groupId := engine.MakeGroupIdAndStartQueue()
+// 	for i := 0; i < 10; i++ {
+// 		if i == 3 {
+// 			engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "fail"},
+// 				IsCancelWhenSomethingError: true,
+// 				CallBack: func(i interface{}, err error) {
+// 					log.Print(i, err)
+// 				}})
+// 			continue
+// 		}
+// 		engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "xxxx"},
+// 			IsCancelWhenSomethingError: true,
+// 			CallBack: func(i interface{}, err error) {
+// 				log.Print(i, err)
+// 			}})
+// 	}
+// 	log.Print("------------- done2 -------------- ", time.Since(now))
+// 	engine.ReleaseGroupId(groupId)
+// 	<-wait
+// }
+
+func TestShowInfo(t *testing.T) {
 	var engine ISafeQueue
-	engine = CreateSafeQueue(&SafeQueueConfig{
-		NumberWorkers: 3, Capacity: 30,
+	engine = RunSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 3, Capacity: 50,
 	})
 	wait := make(chan bool)
 	// defer engine.Close()
-	engine.Run()
 	now := time.Now()
-	groupId := engine.MakeGroupIdAndStartQueue()
-	for i := 0; i < 10; i++ {
-		if i == 3 {
-			engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "fail"},
-				IsCancelWhenSomethingError: true,
-				CallBack: func(i interface{}, err error) {
-					log.Print(i, err)
-				}})
-			continue
-		}
-		engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "xxxx"},
-			IsCancelWhenSomethingError: true,
-			CallBack: func(i interface{}, err error) {
-				log.Print(i, err)
-			}})
+	// go func() {
+	// 	for {
+	// 		time.Sleep(100 * time.Millisecond)
+	// 		log.Print(engine.Info())
+	// 	}
+	// }()
+	for i := 0; i < 100; i++ {
+		engine.Send(&Job{
+			Params: []interface{}{i},
+			Exectutor: func(i ...interface{}) (interface{}, error) {
+				time.Sleep(200 * time.Millisecond)
+				log.Print("i:", i)
+				return nil, nil
+			},
+		})
 	}
 	log.Print("------------- done2 -------------- ", time.Since(now))
-	engine.ReleaseGroupId(groupId)
+	<-wait
+}
+
+func TestRunQueue(t *testing.T) {
+	var engine ISafeQueue
+	engine = RunSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 3, Capacity: 200,
+	})
+	wait := make(chan bool)
+	// defer engine.Close()
+	now := time.Now()
+	// go func() {
+	// 	for {
+	// 		time.Sleep(100 * time.Millisecond)
+	// 		log.Print(engine.Info())
+	// 	}
+	// }()
+	for i := 0; i < 100; i++ {
+		engine.Send(&Job{
+			Params: []interface{}{i},
+			Exectutor: func(i ...interface{}) (interface{}, error) {
+				time.Sleep(100 * time.Millisecond)
+				log.Print("i:", i)
+				return nil, nil
+			},
+		})
+	}
+	log.Print("------------- done2 -------------- ", time.Since(now))
+	<-wait
+}
+
+func TestRunWithLimiter(t *testing.T) {
+	var engine ISafeQueue
+
+	engine = RunSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 100, Capacity: 200,
+	})
+	wait := make(chan bool)
+	// defer engine.Close()
+	now := time.Now()
+	limiter := &Limiter{Key: "any1", Limit: 2}
+	for i := 0; i < 100; i++ {
+		engine.Send(&Job{
+			Params: []interface{}{i},
+			Exectutor: func(i ...interface{}) (interface{}, error) {
+				time.Sleep(100 * time.Millisecond)
+				log.Print("i:", i)
+				return nil, nil
+			},
+			Limiter: limiter,
+		})
+		engine.Send(&Job{
+			Params: []interface{}{i},
+			Exectutor: func(i ...interface{}) (interface{}, error) {
+				time.Sleep(100 * time.Millisecond)
+				log.Print("i2:", i)
+				return nil, nil
+			},
+		})
+	}
+	log.Print("------------- done2 -------------- ", time.Since(now))
 	<-wait
 }
