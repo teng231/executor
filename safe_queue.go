@@ -64,6 +64,7 @@ type ISafeQueue interface {
 	SendWithGroup(jobs ...*Job) error // push job to hub and wait to done
 	Wait()                            // keep block thread
 	Done()                            // Immediate stop wait
+	Jobs() []*Job
 }
 
 func (sq *SafeQueue) terminatingHandler() []*Job {
