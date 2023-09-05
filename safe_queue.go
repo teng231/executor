@@ -68,7 +68,7 @@ type ISafeQueue interface {
 }
 
 func (sq *SafeQueue) terminatingHandler() []*Job {
-	close(sq.hub)
+	sq.Close()
 	return sq.Jobs()
 }
 
@@ -154,10 +154,11 @@ func (s *SafeQueue) Done() {
 }
 
 func (s *SafeQueue) Close() error {
-	close(s.hub)
 	for _, ch := range s.closech {
+		ch <- true
 		close(ch)
 	}
+	close(s.hub)
 	return nil
 }
 func (s *SafeQueue) Send(jobs ...*Job) error {
