@@ -65,19 +65,19 @@ type ISafeQueue interface {
 	Wait()                            // keep block thread
 	Done()                            // Immediate stop wait
 	Jobs() []*Job
+	TerminatingHandler() []*Job
 }
 
-func (sq *SafeQueue) terminatingHandler() []*Job {
+func (sq *SafeQueue) TerminatingHandler() []*Job {
 	sq.Close()
 	return sq.Jobs()
 }
 
 type SafeQueue struct {
-	hub                chan *Job
-	numberWorkers      int
-	closech            map[string](chan bool)
-	wg                 *sync.WaitGroup
-	TerminatingHandler FnWithTerminating
+	hub           chan *Job
+	numberWorkers int
+	closech       map[string](chan bool)
+	wg            *sync.WaitGroup
 }
 
 func CreateSafeQueue(config *SafeQueueConfig) *SafeQueue {
@@ -126,7 +126,6 @@ func RunSafeQueue(config *SafeQueueConfig) *SafeQueue {
 		closech:       make(map[string]chan bool),
 		wg:            &sync.WaitGroup{},
 	}
-	engine.TerminatingHandler = engine.terminatingHandler
 	engine.Run()
 	return engine
 }

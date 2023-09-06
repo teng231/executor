@@ -23,7 +23,7 @@ func testExec(in ...interface{}) (interface{}, error) {
 }
 func TestSimpleSafeQueue(t *testing.T) {
 	var engine ISafeQueue
-	engine = CreateSafeQueue(&SafeQueueConfig{
+	engine = RunSafeQueue(&SafeQueueConfig{
 		NumberWorkers: 3, Capacity: 500,
 		WaitGroup: &sync.WaitGroup{},
 	})
