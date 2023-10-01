@@ -38,43 +38,41 @@ go get github.com/teng231/executor
 ## Usage : Interface list
 ```go
 type ISafeQueue interface {
-	Info() SafeQueueInfo // engine info
-	Close() error // close all anything
-	RescaleUp(numWorker uint) // increase worker
+	Info() SafeQueueInfo              // engine info
+	Close() error                     // close all anything
+	RescaleUp(numWorker uint)         // increase worker
 	RescaleDown(numWorker uint) error // reduce worker
-	Run() // start
-	Send(jobs ...*Job) error // push job to hub
+	Run()                             // start
+	Send(jobs ...*Job) error          // push job to hub
 	SendWithGroup(jobs ...*Job) error // push job to hub and wait to done
-	MakeGroupIdAndStartQueue() string
-	ReleaseGroupId(groupId string)
-	Wait() // keep block thread
-	Done() // Immediate stop wait
+	Wait()                            // keep block thread
+	Done()                            // Immediate stop wait
+	Jobs() []*Job
+	TerminatingHandler() []*Job
 }
 ```
 
 ### Initial
+
 ```go
-    engine := CreateSafeQueue(&SafeQueueConfig{
-        NumberWorkers: 3,
-        Capacity: 500,
-    })
-    engine.Run()
-
-    // or with out func Run()
-
     engine := RunSafeQueue(&SafeQueueConfig{
         NumberWorkers: 3,
         Capacity: 500,
     })
 ```
-### Send Simple Job
+
+### Send Simple Job and executed
 ```go
+    // limmiter it a ratelimit limit 10 execs/sec
+    limiter := &Limiter{Key: "Something", Limit: 10}
     // simple job
     j := &Job{
+        Limiter:limiter,
+        Params: []interface{1, "abc"},
         Exectutor: func(in ...interface{}) {
             // any thing
+            log.Print("do it")
         },
-        Params: []interface{1, "abc"}
     }
     engine.Send(j)
     // send mutiple job
@@ -93,41 +91,14 @@ type ISafeQueue interface {
     engine.Send(jobs...)
 ```
 
-### Send Job complicated
-```go
-    // wait for job completed
-    j := &Job{
-        Exectutor: func(in ...interface{}) {
-            // any thing
-        },
-        Params: []interface{1, "abc"},
-        Wg: &sync.WaitGroup{},
-    }
-    engine.Send(j)
-    // wait for job run success
-    j.Wait()
-
-    // callback handle async
-    // you can sync when use with waitgroup
-    j := &Job{
-        Exectutor: func(in ...interface{}) {
-            // any thing
-        },
-        CallBack: func(out interface{}, err error) {
-            // try some thing here
-        }
-        Params: []interface{1, "abc"}
-    }
-    engine.Send(j)
-```
-
-
 ### Send Job with groups
 ```go
+    limiter := &Limiter{Key: "Something", Limit: 10}
     // prepaire a group job.
 	group1 := make([]*Job, 0)
 	for i := 0; i < 10; i++ {
 		group1 = append(group1, &Job{
+            Limiter:limiter,
             Exectutor: func(in ...interface{}) {
                 // any thing
             },
@@ -136,7 +107,6 @@ type ISafeQueue interface {
 	}
     // wait for job completed
 	engine.SendWithGroup(group1...)
-
     engine.Wait()
 ```
 
@@ -148,33 +118,20 @@ type ISafeQueue interface {
 ```
 
 
-### SafeQueue using with group and cancel when other job error
+### Graceful shutdown
 ```go
-    // prepaire a group job.
-	group1 := make([]*Job, 0)
-    groupId := engine.MakeGroupIdAndStartQueue()
-	for i := 0; i < 10; i++ {
-		group1 = append(group1, &Job{
-            Exectutor: func(in ...interface{}) {
-                // any thing
-            },
-            GroupId: groupId,
-            CallBack: func(i interface{}, err error) {
-					log.Print(i, err)
-			},
-            IsCancelWhenSomethingError: true,
-            Params: []interface{1, "abc"},
-        })
-	}
-    // wait for job completed
-	engine.SendWithGroup(group1...)
-    engine.Wait()
-    engine.ReleaseGroupId(groupId)
+    jobs := e.quicklyExec.TerminatingHandler()
+		if len(jobs) > 0 {
+			for _, job := range jobs {
+				job.Exectutor(job.Params...)
+			}
+		}
+		log.Print("quick exec job executed: ", len(jobs))
 ```
 
 ## Race
 
-For run a task and limit time process
++ For run a task and limit time process
 
 ```go
 _, err := Race(200*time.Millisecond, func(i ...interface{}) (interface{}, error) {
@@ -184,7 +141,7 @@ _, err := Race(200*time.Millisecond, func(i ...interface{}) (interface{}, error)
 log.Print("run: ", time.Since(now))
 ```
 
-With SafeQueue
++ With SafeQueue
 
 ```go
 engine := RunSafeQueue(&SafeQueueConfig{

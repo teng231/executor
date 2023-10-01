@@ -3,6 +3,7 @@ package executor
 import (
 	"errors"
 	"log"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -172,36 +173,6 @@ func TestGroup(t *testing.T) {
 	<-wait
 }
 
-// func TestGroupWithCancel(t *testing.T) {
-// 	var engine ISafeQueue
-// 	engine = CreateSafeQueue(&SafeQueueConfig{
-// 		NumberWorkers: 3, Capacity: 30,
-// 	})
-// 	wait := make(chan bool)
-// 	// defer engine.Close()
-// 	engine.Run()
-// 	now := time.Now()
-// 	groupId := engine.MakeGroupIdAndStartQueue()
-// 	for i := 0; i < 10; i++ {
-// 		if i == 3 {
-// 			engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "fail"},
-// 				IsCancelWhenSomethingError: true,
-// 				CallBack: func(i interface{}, err error) {
-// 					log.Print(i, err)
-// 				}})
-// 			continue
-// 		}
-// 		engine.SendWithGroup(&Job{GroupId: groupId, Exectutor: testExec, Params: []interface{}{i, "xxxx"},
-// 			IsCancelWhenSomethingError: true,
-// 			CallBack: func(i interface{}, err error) {
-// 				log.Print(i, err)
-// 			}})
-// 	}
-// 	log.Print("------------- done2 -------------- ", time.Since(now))
-// 	engine.ReleaseGroupId(groupId)
-// 	<-wait
-// }
-
 func TestShowInfo(t *testing.T) {
 	var engine ISafeQueue
 	engine = RunSafeQueue(&SafeQueueConfig{
@@ -288,5 +259,51 @@ func TestRunWithLimiter(t *testing.T) {
 		})
 	}
 	log.Print("------------- done2 -------------- ", time.Since(now))
+	<-wait
+}
+
+func TestRunQueueErrorRetry(t *testing.T) {
+	var engine ISafeQueue
+	engine = RunSafeQueue(&SafeQueueConfig{
+		NumberWorkers: 3, Capacity: 200,
+	})
+	done := map[string]bool{}
+	mt := &sync.Mutex{}
+	wait := make(chan bool)
+	f := func(i ...interface{}) (interface{}, error) {
+		time.Sleep(100 * time.Millisecond)
+		log.Print("i:", i)
+		val := i[0].(int)
+		if val == 5 {
+			return val, errors.New("st")
+		}
+		mt.Lock()
+		done["hello_"+strconv.Itoa(val)] = true
+		mt.Unlock()
+		return nil, nil
+	}
+	jobs := []*Job{}
+	backupJobs := []*Job{}
+	for i := 0; i < 10; i++ {
+		jobs = append(jobs, &Job{
+			Params:    []interface{}{i},
+			Exectutor: f,
+			CallBack: func(i interface{}, err error) {
+				if err != nil {
+					log.Print("eeeee ", i)
+					time.Sleep(1000 * time.Millisecond)
+					backupJobs = append(backupJobs, &Job{
+						Params:    []interface{}{i.(int) + 10},
+						Exectutor: f,
+					})
+				}
+			},
+		})
+	}
+	engine.SendWithGroup(jobs...)
+	if len(backupJobs) > 0 {
+		engine.SendWithGroup(backupJobs...)
+	}
+	log.Print(done)
 	<-wait
 }
